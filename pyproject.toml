@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acronym"
+version = "0.1.0"
+description = "Micro AI for extracting acronyms and definitions from .docx files"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "python-docx>=0.8.11",
+    "scikit-learn>=1.0",
+    "numpy>=1.21",
+]
+
+[project.scripts]
+acronym = "acronym.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["acronym*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
