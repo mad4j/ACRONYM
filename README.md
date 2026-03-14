@@ -1,4 +1,4 @@
-# ACRONYM
+# ACRONYM – Acronym Detection Using AI
 
 > Micro AI for extracting acronyms and their definitions from `.docx` files.
 > Training and detection are language-specific (**English** and **Italian**).

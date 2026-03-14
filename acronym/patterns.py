@@ -21,7 +21,7 @@ _ACRONYM_BEFORE = re.compile(
 )
 
 _ACRONYM_AFTER = re.compile(
-    r"\b([A-Za-z\u00C0-\u00FA][^()\n]{3,150}?)\s*\(\s*([A-Z][A-Z0-9]{1,9})\s*\)",
+    r"\b([A-Za-z\u00C0-\u024F][^()\n]{3,150}?)\s*\(\s*([A-Z][A-Z0-9]{1,9})\s*\)",
     re.MULTILINE,
 )
 
