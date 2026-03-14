@@ -5,8 +5,14 @@ Usage::
     # Train a model
     acronym train data/en/samples.json --lang en
 
+    # Train a model continuing from a previously trained one
+    acronym train data/en/more_samples.json --lang en --warm-start
+
     # Detect acronyms in a document
     acronym detect report.docx --lang en --format json
+
+    # Detect acronyms including standalone ALL-CAPS words without definitions
+    acronym detect report.docx --lang en --context-aware --format json
 
     # Show help
     acronym --help
@@ -19,7 +25,8 @@ import json
 import os
 import sys
 
-from .detector import detect_acronyms
+from .detector import detect_acronyms, detect_standalone_acronyms_from_text
+from .reader import read_docx
 from .trainer import DEFAULT_DATA_DIR, train_from_file
 
 
@@ -36,7 +43,12 @@ def _cmd_train(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        train_from_file(data_path, lang=args.lang, model_dir=args.model_dir)
+        train_from_file(
+            data_path,
+            lang=args.lang,
+            model_dir=args.model_dir,
+            warm_start=args.warm_start,
+        )
     except (ValueError, OSError) as exc:
         print(f"Error during training: {exc}", file=sys.stderr)
         return 1
@@ -58,6 +70,22 @@ def _cmd_detect(args: argparse.Namespace) -> int:
             model_dir=args.model_dir,
             threshold=args.threshold,
         )
+
+        if args.context_aware:
+            # Also detect standalone ALL-CAPS words and merge, keeping results
+            # with an explicit definition when both sources return the same acronym.
+            text = read_docx(args.input)
+            standalone = detect_standalone_acronyms_from_text(
+                text,
+                lang=args.lang,
+                threshold=args.threshold,
+            )
+            explicit_acronyms = {str(r["acronym"]).upper() for r in results}
+            for r in standalone:
+                if str(r["acronym"]).upper() not in explicit_acronyms:
+                    results.append(r)
+            results.sort(key=lambda x: str(x["acronym"]))
+
     except FileNotFoundError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -115,6 +143,16 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="Directory where the trained model is saved (default: models/).",
     )
+    p_train.add_argument(
+        "--warm-start",
+        "-w",
+        action="store_true",
+        default=False,
+        help=(
+            "Continue training from the existing model instead of starting "
+            "from scratch.  Ignored when no prior model is found."
+        ),
+    )
 
     # -- detect ---------------------------------------------------------------
     p_detect = sub.add_parser(
@@ -149,6 +187,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default="table",
         choices=["table", "json"],
         help="Output format (default: table).",
+    )
+    p_detect.add_argument(
+        "--context-aware",
+        "-c",
+        action="store_true",
+        default=False,
+        help=(
+            "Also detect standalone ALL-CAPS words that appear without an "
+            "explicit parenthetical definition, using contextual scoring."
+        ),
     )
 
     return parser

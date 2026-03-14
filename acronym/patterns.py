@@ -3,6 +3,9 @@
 Two patterns are recognised in both languages:
   - *acronym_before*: ``ACRONYM (Long Form Definition)``
   - *acronym_after*:  ``Long Form Definition (ACRONYM)``
+
+A third, standalone pattern is used for *contextual* detection:
+  - *standalone*: any ``ALL-CAPS`` token not already covered by the above pairs.
 """
 
 import re
@@ -25,6 +28,9 @@ _ACRONYM_AFTER = re.compile(
     re.MULTILINE,
 )
 
+# Matches any standalone ALL-CAPS word of 2-10 characters (letters and/or digits).
+_STANDALONE_ACRONYM = re.compile(r"\b([A-Z][A-Z0-9]{1,9})\b")
+
 LANG_PATTERNS: dict = {
     "en": {"acronym_before": _ACRONYM_BEFORE, "acronym_after": _ACRONYM_AFTER},
     "it": {"acronym_before": _ACRONYM_BEFORE, "acronym_after": _ACRONYM_AFTER},
@@ -32,6 +38,9 @@ LANG_PATTERNS: dict = {
 
 # Candidate: (acronym, definition, pattern_type)
 Candidate = Tuple[str, str, str]
+
+# Standalone candidate: (acronym, context_window)
+StandaloneCandidate = Tuple[str, str]
 
 
 def find_candidates(text: str, lang: str = "en") -> List[Candidate]:
@@ -67,5 +76,54 @@ def find_candidates(text: str, lang: str = "en") -> List[Candidate]:
         if key not in seen:
             seen.add(key)
             candidates.append((acronym, definition, "after"))
+
+    return candidates
+
+
+def find_standalone_candidates(
+    text: str,
+    lang: str = "en",
+    context_window: int = 150,
+) -> List[StandaloneCandidate]:
+    """Find standalone ALL-CAPS words that are *not* part of an explicit pair.
+
+    This function complements :func:`find_candidates` by scanning for
+    all-uppercase tokens (e.g. ``CPU``, ``NATO``) that appear in the text
+    without an adjacent parenthetical definition.  Each such token is returned
+    together with a window of surrounding text that can be used as contextual
+    evidence.
+
+    Args:
+        text:           Plain text to search.
+        lang:           Language code (``"en"`` or ``"it"``).
+        context_window: Number of characters on each side of the match to
+                        include in the context window.
+
+    Returns:
+        List of ``(acronym, context)`` pairs, deduplicated by acronym.
+        Acronyms already discovered by :func:`find_candidates` are excluded.
+    """
+    # Build the set of acronyms already captured via explicit patterns so we
+    # do not double-report them.
+    explicit: set = {acr.upper() for acr, _, _ in find_candidates(text, lang)}
+
+    candidates: List[StandaloneCandidate] = []
+    seen: set = set()
+
+    for m in _STANDALONE_ACRONYM.finditer(text):
+        acronym = m.group(1)
+        upper = acronym.upper()
+
+        if upper in explicit or upper in seen:
+            continue
+
+        seen.add(upper)
+
+        # Extract a window of surrounding text as contextual evidence.
+        start = max(0, m.start() - context_window)
+        end = min(len(text), m.end() + context_window)
+        context = text[start:end].strip()
+
+        candidates.append((acronym, context))
 
     return candidates

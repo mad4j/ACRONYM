@@ -8,8 +8,9 @@ A trained :class:`~acronym.model.AcronymModel` is required.  Use
 import os
 from typing import Dict, List, Optional
 
+from .features import score_standalone_candidate
 from .model import AcronymModel
-from .patterns import find_candidates
+from .patterns import find_candidates, find_standalone_candidates
 from .reader import read_docx
 from .trainer import DEFAULT_MODEL_DIR, get_model_path
 
@@ -148,3 +149,53 @@ def detect_acronyms_from_text(
 
     candidates = find_candidates(text, lang)
     return _score_and_filter(candidates, model, threshold)
+
+
+def detect_standalone_acronyms_from_text(
+    text: str,
+    lang: str = "en",
+    threshold: float = DEFAULT_THRESHOLD,
+    context_window: int = 150,
+) -> List[Result]:
+    """Detect standalone ALL-CAPS acronyms that appear without an explicit definition.
+
+    Unlike :func:`detect_acronyms_from_text`, this function does **not** require
+    an acronym to be accompanied by a parenthetical definition.  It scans for
+    all-uppercase words and scores each one using contextual signals derived
+    from the surrounding text: whether the acronym's letters appear as word
+    initials nearby, whether the word length is in the typical range for
+    acronyms, and whether the word is a known common non-acronym term.
+
+    This allows the system to recognise, for example, that ``CPU`` is being
+    used as an acronym in *"The CPU handles all calculations"* even though no
+    explicit *"Central Processing Unit"* definition is present in the text.
+
+    Args:
+        text:           Input text.
+        lang:           Language of the text (``"en"`` or ``"it"``).
+        threshold:      Minimum confidence score ``[0, 1]``.  Defaults to
+                        ``0.5``.
+        context_window: Number of characters on each side of the candidate
+                        to use as context.  Defaults to ``150``.
+
+    Returns:
+        List of result dicts with keys ``"acronym"``, ``"definition"``
+        (always ``""`` for standalone candidates), and ``"confidence"``,
+        sorted alphabetically by acronym.
+    """
+    candidates = find_standalone_candidates(text, lang=lang, context_window=context_window)
+
+    results: List[Result] = []
+    for acronym, context in candidates:
+        confidence = score_standalone_candidate(acronym, context, lang=lang)
+        if confidence >= threshold:
+            results.append(
+                {
+                    "acronym": acronym,
+                    "definition": "",
+                    "confidence": round(float(confidence), 3),
+                }
+            )
+
+    results.sort(key=lambda x: str(x["acronym"]))
+    return results

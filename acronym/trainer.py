@@ -104,6 +104,7 @@ def train_from_file(
     data_path: str,
     lang: str,
     model_dir: Optional[str] = None,
+    warm_start: bool = False,
 ) -> AcronymModel:
     """Train a model from a JSON data file and persist it to disk.
 
@@ -112,12 +113,19 @@ def train_from_file(
         lang:       Language code (``"en"`` or ``"it"``).
         model_dir:  Directory where the model file is saved.  Defaults to
                     ``models/`` in the project root.
+        warm_start: When ``True`` and a previously trained model already exists
+                    at the target path, that model is loaded and training
+                    continues from its learned weights rather than starting from
+                    scratch.  Falls back to training from scratch when no prior
+                    model is found.
 
     Returns:
         The trained :class:`~acronym.model.AcronymModel`.
     """
     samples, labels = load_training_data(data_path)
-    return train_from_samples(samples, labels, lang=lang, model_dir=model_dir)
+    return train_from_samples(
+        samples, labels, lang=lang, model_dir=model_dir, warm_start=warm_start
+    )
 
 
 def train_from_samples(
@@ -125,22 +133,35 @@ def train_from_samples(
     labels: List[int],
     lang: str,
     model_dir: Optional[str] = None,
+    warm_start: bool = False,
 ) -> AcronymModel:
     """Train a model from in-memory samples and persist it to disk.
 
     Args:
-        samples:   List of ``(acronym, definition, pattern_type)`` tuples.
-        labels:    Parallel list of integer labels (``1`` / ``0``).
-        lang:      Language code (``"en"`` or ``"it"``).
-        model_dir: Directory where the model file is saved.
+        samples:    List of ``(acronym, definition, pattern_type)`` tuples.
+        labels:     Parallel list of integer labels (``1`` / ``0``).
+        lang:       Language code (``"en"`` or ``"it"``).
+        model_dir:  Directory where the model file is saved.
+        warm_start: When ``True`` and a previously trained model already exists
+                    at the target path, that model is loaded and training
+                    continues from its learned weights rather than starting from
+                    scratch.  Falls back to training from scratch when no prior
+                    model is found.
 
     Returns:
         The trained :class:`~acronym.model.AcronymModel`.
     """
-    model = AcronymModel(lang=lang)
-    model.train(samples, labels)
-
     model_path = get_model_path(lang, model_dir)
+
+    if warm_start and os.path.exists(model_path):
+        # Load the existing model and enable warm-start so the optimiser
+        # continues from the previously learned coefficients.
+        model = AcronymModel.load(model_path)
+        model._pipeline.named_steps["clf"].warm_start = True
+    else:
+        model = AcronymModel(lang=lang)
+
+    model.train(samples, labels)
     model.save(model_path)
     print(f"[acronym] Model for '{lang}' trained on {len(samples)} samples → {model_path}")
     return model

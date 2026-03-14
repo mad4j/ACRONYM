@@ -25,10 +25,16 @@ class AcronymModel:
     """Language-aware binary classifier for acronym-definition pairs.
 
     Args:
-        lang: Language code the model is trained for (``"en"`` or ``"it"``).
+        lang:       Language code the model is trained for (``"en"`` or ``"it"``).
+        warm_start: When ``True`` the underlying :class:`~sklearn.linear_model.LogisticRegression`
+                    will reuse the coefficients from the previous :meth:`train` call as the
+                    starting point for the next optimisation.  This allows incremental
+                    training: pass ``warm_start=True`` together with a pre-loaded model in
+                    :func:`~acronym.trainer.train_from_samples` to continue training an
+                    existing model instead of starting from scratch.
     """
 
-    def __init__(self, lang: str = "en") -> None:
+    def __init__(self, lang: str = "en", warm_start: bool = False) -> None:
         self.lang = lang
         self._trained = False
         self._pipeline = Pipeline(
@@ -40,6 +46,7 @@ class AcronymModel:
                         random_state=42,
                         max_iter=1000,
                         class_weight="balanced",
+                        warm_start=warm_start,
                     ),
                 ),
             ]
