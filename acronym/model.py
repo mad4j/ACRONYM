@@ -4,11 +4,15 @@ The model is a scikit-learn ``Pipeline`` that normalises features with
 :class:`~sklearn.preprocessing.StandardScaler` and classifies them with
 :class:`~sklearn.linear_model.LogisticRegression`.  One model instance is
 trained per language.
+
+The classifier uses ``warm_start=True`` so that :meth:`AcronymModel.update`
+can incrementally refine an already-trained model without discarding the
+knowledge embedded in its existing weights.
 """
 
 import os
 import pickle
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -17,8 +21,9 @@ from sklearn.preprocessing import StandardScaler
 
 from .features import extract_features
 
-# (acronym, definition, pattern_type)
-Sample = Tuple[str, str, str]
+# (acronym, definition, pattern_type) – legacy 3-tuple
+# (acronym, definition, pattern_type, context) – context-aware 4-tuple
+Sample = Union[Tuple[str, str, str], Tuple[str, str, str, str]]
 
 
 class AcronymModel:
@@ -40,6 +45,7 @@ class AcronymModel:
                         random_state=42,
                         max_iter=1000,
                         class_weight="balanced",
+                        warm_start=True,
                     ),
                 ),
             ]
@@ -50,9 +56,16 @@ class AcronymModel:
     # ------------------------------------------------------------------
 
     def _build_X(self, samples: List[Sample]) -> np.ndarray:
-        return np.array(
-            [extract_features(acr, defn, self.lang, pt) for acr, defn, pt in samples]
-        )
+        rows = []
+        for item in samples:
+            # Accept both 3-tuple (acronym, definition, pattern_type) and
+            # 4-tuple (acronym, definition, pattern_type, context).
+            if len(item) == 4:
+                acr, defn, pt, ctx = item[0], item[1], item[2], item[3]
+            else:
+                acr, defn, pt, ctx = item[0], item[1], item[2], ""
+            rows.append(extract_features(acr, defn, self.lang, pt, ctx))
+        return np.array(rows)
 
     # ------------------------------------------------------------------
     # Public API
@@ -62,7 +75,8 @@ class AcronymModel:
         """Fit the model on labelled samples.
 
         Args:
-            samples: List of ``(acronym, definition, pattern_type)`` tuples.
+            samples: List of ``(acronym, definition, pattern_type)`` tuples or
+                     ``(acronym, definition, pattern_type, context)`` 4-tuples.
             labels:  Parallel list of integer labels (``1`` = valid pair,
                      ``0`` = invalid / noise).
 
@@ -76,6 +90,35 @@ class AcronymModel:
         X = self._build_X(samples)
         self._pipeline.fit(X, labels)
         self._trained = True
+        return self
+
+    def update(self, samples: List[Sample], labels: List[int]) -> "AcronymModel":
+        """Incrementally update the model with new labelled samples.
+
+        When the model has already been trained this method performs a
+        **warm-start** fit: the existing ``LogisticRegression`` coefficients
+        are used as initial values and are refined on the combined knowledge
+        brought by *samples*.  If the model has not been trained yet, this
+        method falls back to :meth:`train`.
+
+        Args:
+            samples: New ``(acronym, definition, pattern_type[, context])``
+                     tuples to learn from.
+            labels:  Parallel list of integer labels.
+
+        Returns:
+            ``self`` (for chaining).
+        """
+        if not self._trained:
+            return self.train(samples, labels)
+        if not samples:
+            raise ValueError("samples must not be empty")
+        if len(samples) != len(labels):
+            raise ValueError("samples and labels must have the same length")
+        X = self._build_X(samples)
+        # warm_start=True (set at construction) reuses the previous coef_ as
+        # the initial estimate for the next fit() call.
+        self._pipeline.fit(X, labels)
         return self
 
     def predict(self, samples: List[Sample]) -> np.ndarray:

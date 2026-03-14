@@ -2,6 +2,15 @@
 
 Each candidate ``(acronym, definition, pattern_type)`` is converted into a
 fixed-length numeric feature vector used by the :class:`~acronym.model.AcronymModel`.
+
+Two contextual features are included:
+
+* **is_common_word** – ``1`` when the acronym lowercased is a well-known
+  function word (e.g. ``"it"``, ``"on"``), signalling it is probably *not* an
+  acronym.
+* **context_has_def_marker** – ``1`` when the surrounding sentence contains a
+  definitional phrase such as *"stands for"* or *"also known as"*, which
+  strongly signals an explicit acronym introduction.
 """
 
 import re
@@ -38,6 +47,75 @@ LANG_STOPWORDS: dict = {
 }
 
 # ---------------------------------------------------------------------------
+# Language-specific common words (short words that are NOT acronyms)
+# ---------------------------------------------------------------------------
+
+#: English words whose uppercase form is often *mistaken* for an acronym.
+#: This list covers common function/preposition words drawn from standard
+#: English frequency lists.  Extend ``LANG_COMMON_WORDS`` at runtime if you
+#: need to add domain-specific false-positive words without modifying this file.
+_EN_COMMON_WORDS: FrozenSet[str] = frozenset(
+    {
+        "a", "an", "as", "at", "be", "by", "do", "ex", "go", "he",
+        "if", "in", "is", "it", "me", "my", "no", "of", "oh", "ok",
+        "on", "or", "so", "to", "up", "us", "we",
+    }
+)
+
+#: Italian words whose uppercase form is often *mistaken* for an acronym.
+#: Drawn from standard Italian frequency lists covering prepositions, articles,
+#: pronouns, and common verbs.
+_IT_COMMON_WORDS: FrozenSet[str] = frozenset(
+    {
+        "da", "di", "ed", "il", "la", "le", "lo", "ma", "mi", "ne",
+        "no", "si", "su", "te", "tu", "va",
+    }
+)
+
+LANG_COMMON_WORDS: dict = {
+    "en": _EN_COMMON_WORDS,
+    "it": _IT_COMMON_WORDS,
+}
+
+# ---------------------------------------------------------------------------
+# Definitional context markers per language
+# ---------------------------------------------------------------------------
+
+#: Phrases that strongly indicate an acronym is being introduced in English.
+_EN_DEF_MARKERS: List[str] = [
+    "stands for",
+    "stand for",
+    "known as",
+    "refers to",
+    "abbreviated",
+    "short for",
+    "abbreviation",
+    "i.e.",
+    "namely",
+    "meaning",
+    "also called",
+]
+
+#: Phrases that strongly indicate an acronym is being introduced in Italian.
+_IT_DEF_MARKERS: List[str] = [
+    "ossia",
+    "ovvero",
+    "vale a dire",
+    "abbreviazione",
+    "acronimo",
+    "sta per",
+    "si intende",
+    "denominato",
+    "conosciuto come",
+    "anche detto",
+]
+
+LANG_DEF_MARKERS: dict = {
+    "en": _EN_DEF_MARKERS,
+    "it": _IT_DEF_MARKERS,
+}
+
+# ---------------------------------------------------------------------------
 # Feature names (kept in sync with extract_features return order)
 # ---------------------------------------------------------------------------
 
@@ -54,6 +132,8 @@ FEATURE_NAMES: List[str] = [
     "acronym_in_initials",
     "def_char_len",
     "pattern_before",
+    "is_common_word",
+    "context_has_def_marker",
 ]
 
 
@@ -88,6 +168,7 @@ def extract_features(
     definition: str,
     lang: str = "en",
     pattern_type: str = "before",
+    context: str = "",
 ) -> np.ndarray:
     """Extract a numeric feature vector for a candidate pair.
 
@@ -97,6 +178,10 @@ def extract_features(
         lang:         Language code (``"en"`` or ``"it"``).
         pattern_type: ``"before"`` if the acronym preceded its definition in
                       the source text, ``"after"`` otherwise.
+        context:      The surrounding sentence or text window where the
+                      candidate was found.  Used to compute the contextual
+                      features ``is_common_word`` and
+                      ``context_has_def_marker``.
 
     Returns:
         1-D ``numpy`` array of length ``len(FEATURE_NAMES)``.
@@ -127,6 +212,23 @@ def extract_features(
     def_char_len = len(definition)
     pattern_before = int(pattern_type == "before")
 
+    # -----------------------------------------------------------------------
+    # Contextual features
+    # -----------------------------------------------------------------------
+
+    # Feature: is the acronym also a common function/dictionary word?
+    # A high-frequency word that happens to be in uppercase is likely NOT an
+    # acronym (e.g. "IT" meaning "it", "ON" meaning "on").
+    common_words = LANG_COMMON_WORDS.get(lang, _EN_COMMON_WORDS)
+    is_common_word = int(acronym.lower() in common_words)
+
+    # Feature: does the surrounding context contain a definitional phrase
+    # (e.g. "stands for", "also known as") that explicitly introduces the
+    # acronym?  Such phrases are strong positive signals.
+    def_markers = LANG_DEF_MARKERS.get(lang, _EN_DEF_MARKERS)
+    ctx_lower = context.lower()
+    context_has_def_marker = int(any(marker in ctx_lower for marker in def_markers))
+
     return np.array(
         [
             acr_len,
@@ -141,6 +243,8 @@ def extract_features(
             acronym_in_initials,
             def_char_len,
             pattern_before,
+            is_common_word,
+            context_has_def_marker,
         ],
         dtype=float,
     )

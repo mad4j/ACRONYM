@@ -157,3 +157,35 @@ class TestTrainFromSamples:
             model_dir = os.path.join(tmpdir, "models")
             model = train_from_samples(samples, labels, lang="en", model_dir=model_dir)
             assert model.is_trained()
+
+    def test_warm_start_from_base_model(self):
+        """Passing base_model warm-starts training and keeps the model trained."""
+        samples = [(d["acronym"], d["definition"], d["pattern_type"]) for d in _VALID_DATA]
+        labels = [d["label"] for d in _VALID_DATA]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_dir = os.path.join(tmpdir, "models")
+            # First train
+            base = train_from_samples(samples, labels, lang="en", model_dir=model_dir)
+            assert base.is_trained()
+            # Second train with warm start
+            model_dir2 = os.path.join(tmpdir, "models2")
+            updated = train_from_samples(
+                samples, labels, lang="en", model_dir=model_dir2, base_model=base
+            )
+            assert updated.is_trained()
+            assert updated is base  # same object returned
+
+    def test_warm_start_untrained_base_falls_back(self):
+        """Passing an untrained base_model falls back to a fresh train."""
+        from acronym.model import AcronymModel
+        samples = [(d["acronym"], d["definition"], d["pattern_type"]) for d in _VALID_DATA]
+        labels = [d["label"] for d in _VALID_DATA]
+        untrained = AcronymModel(lang="en")
+        assert not untrained.is_trained()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_dir = os.path.join(tmpdir, "models")
+            model = train_from_samples(
+                samples, labels, lang="en", model_dir=model_dir, base_model=untrained
+            )
+            assert model.is_trained()
+
