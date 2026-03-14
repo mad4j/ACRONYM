@@ -150,3 +150,55 @@ class TestAcronymModel:
             path = os.path.join(tmpdir, "nested", "dir", "model_en.pkl")
             m.save(path)
             assert os.path.exists(path)
+
+    # ------------------------------------------------------------------
+    # Warm-start / update tests
+    # ------------------------------------------------------------------
+
+    def test_update_on_untrained_model_trains(self):
+        """update() on an untrained model falls back to train()."""
+        samples, labels = _make_samples_labels()
+        m = AcronymModel(lang="en")
+        assert not m.is_trained()
+        m.update(samples, labels)
+        assert m.is_trained()
+
+    def test_update_refines_trained_model(self):
+        """update() on an already-trained model does not raise and stays trained."""
+        samples, labels = _make_samples_labels()
+        m = AcronymModel(lang="en")
+        m.train(samples, labels)
+        original_proba = m.predict_proba([("NATO", "North Atlantic Treaty Organization", "before")])[0]
+        # Feed a new batch (same data as warm start)
+        m.update(samples, labels)
+        assert m.is_trained()
+        # Predictions should still be in a valid range after update
+        updated_proba = m.predict_proba([("NATO", "North Atlantic Treaty Organization", "before")])[0]
+        assert 0.0 <= updated_proba <= 1.0
+
+    def test_update_empty_samples_raises(self):
+        """update() with empty samples raises ValueError."""
+        samples, labels = _make_samples_labels()
+        m = AcronymModel(lang="en")
+        m.train(samples, labels)
+        with pytest.raises(ValueError):
+            m.update([], [])
+
+    def test_update_mismatched_lengths_raises(self):
+        """update() with mismatched samples/labels raises ValueError."""
+        samples, labels = _make_samples_labels()
+        m = AcronymModel(lang="en")
+        m.train(samples, labels)
+        with pytest.raises(ValueError):
+            m.update([("AI", "Artificial Intelligence", "before")], [1, 0])
+
+    def test_predict_with_context_in_sample(self):
+        """4-tuple samples (with context) are accepted by predict_proba."""
+        samples, labels = _make_samples_labels()
+        m = AcronymModel(lang="en")
+        m.train(samples, labels)
+        ctx_sample = [("NATO", "North Atlantic Treaty Organization", "before", "NATO stands for North Atlantic Treaty Organization.")]
+        proba = m.predict_proba(ctx_sample)
+        assert len(proba) == 1
+        assert 0.0 <= proba[0] <= 1.0
+

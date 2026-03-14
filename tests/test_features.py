@@ -71,3 +71,61 @@ class TestExtractFeatures:
         # Should not raise; edge case
         feat = extract_features("AI", "", "en", "before")
         assert feat.shape == (len(FEATURE_NAMES),)
+
+    # ------------------------------------------------------------------
+    # Contextual features: is_common_word
+    # ------------------------------------------------------------------
+
+    def test_is_common_word_for_known_word(self):
+        # "IT" lowercased is in the English common-word list → feature = 1
+        feat = extract_features("IT", "Italy", "en", "before")
+        idx = FEATURE_NAMES.index("is_common_word")
+        assert feat[idx] == 1.0
+
+    def test_is_common_word_for_acronym(self):
+        # "NATO" lowercased is not a common English word → feature = 0
+        feat = extract_features("NATO", "North Atlantic Treaty Organization", "en", "before")
+        idx = FEATURE_NAMES.index("is_common_word")
+        assert feat[idx] == 0.0
+
+    def test_is_common_word_italian(self):
+        # "DA" → "da" is in the Italian common-word list → feature = 1
+        feat = extract_features("DA", "Denominazione di Assegno", "it", "before")
+        idx = FEATURE_NAMES.index("is_common_word")
+        assert feat[idx] == 1.0
+
+    # ------------------------------------------------------------------
+    # Contextual features: context_has_def_marker
+    # ------------------------------------------------------------------
+
+    def test_context_has_def_marker_stands_for(self):
+        ctx = "The acronym AI stands for Artificial Intelligence in this text."
+        feat = extract_features("AI", "Artificial Intelligence", "en", "before", context=ctx)
+        idx = FEATURE_NAMES.index("context_has_def_marker")
+        assert feat[idx] == 1.0
+
+    def test_context_has_def_marker_known_as(self):
+        ctx = "The system also known as NATO was established in 1949."
+        feat = extract_features("NATO", "North Atlantic Treaty Organization", "en", "before", context=ctx)
+        idx = FEATURE_NAMES.index("context_has_def_marker")
+        assert feat[idx] == 1.0
+
+    def test_context_has_def_marker_italian(self):
+        ctx = "IVA, ossia Imposta sul Valore Aggiunto, è una tassa indiretta."
+        feat = extract_features("IVA", "Imposta sul Valore Aggiunto", "it", "before", context=ctx)
+        idx = FEATURE_NAMES.index("context_has_def_marker")
+        assert feat[idx] == 1.0
+
+    def test_context_no_def_marker(self):
+        # Plain text, no definitional phrase → feature = 0
+        ctx = "The NATO military alliance met yesterday in Brussels."
+        feat = extract_features("NATO", "North Atlantic Treaty Organization", "en", "before", context=ctx)
+        idx = FEATURE_NAMES.index("context_has_def_marker")
+        assert feat[idx] == 0.0
+
+    def test_context_default_empty_string(self):
+        # Default context="" should not raise and gives 0 for the marker feature
+        feat = extract_features("CPU", "Central Processing Unit", "en", "before")
+        idx = FEATURE_NAMES.index("context_has_def_marker")
+        assert feat[idx] == 0.0
+

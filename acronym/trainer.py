@@ -15,16 +15,22 @@ Training data is stored as JSON files with the following schema::
 ``label`` is ``1`` for a valid acronym-definition pair and ``0`` for a
 negative / noise example.  ``pattern_type`` is ``"before"`` when the acronym
 precedes its definition in parentheses and ``"after"`` when it follows.
+
+Pass a previously trained :class:`~acronym.model.AcronymModel` as
+``base_model`` to :func:`train_from_samples` or :func:`train_from_file` to
+**warm-start** the new training run from that model's existing weights.  This
+allows the model to build on already-learned knowledge rather than discarding
+it and starting from scratch.
 """
 
 import json
 import os
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from .model import AcronymModel
 
-# (acronym, definition, pattern_type)
-Sample = Tuple[str, str, str]
+# (acronym, definition, pattern_type) or (acronym, definition, pattern_type, context)
+Sample = Union[Tuple[str, str, str], Tuple[str, str, str, str]]
 
 # Default directories (relative to the project root, resolved at runtime)
 _PKG_DIR = os.path.dirname(__file__)
@@ -104,20 +110,27 @@ def train_from_file(
     data_path: str,
     lang: str,
     model_dir: Optional[str] = None,
+    base_model: Optional[AcronymModel] = None,
 ) -> AcronymModel:
     """Train a model from a JSON data file and persist it to disk.
 
     Args:
-        data_path:  Path to the training data JSON file.
-        lang:       Language code (``"en"`` or ``"it"``).
-        model_dir:  Directory where the model file is saved.  Defaults to
-                    ``models/`` in the project root.
+        data_path:   Path to the training data JSON file.
+        lang:        Language code (``"en"`` or ``"it"``).
+        model_dir:   Directory where the model file is saved.  Defaults to
+                     ``models/`` in the project root.
+        base_model:  Optional pre-trained :class:`~acronym.model.AcronymModel`
+                     to warm-start from.  When provided the new training run
+                     begins from the existing model weights rather than from
+                     random initialisation.
 
     Returns:
         The trained :class:`~acronym.model.AcronymModel`.
     """
     samples, labels = load_training_data(data_path)
-    return train_from_samples(samples, labels, lang=lang, model_dir=model_dir)
+    return train_from_samples(
+        samples, labels, lang=lang, model_dir=model_dir, base_model=base_model
+    )
 
 
 def train_from_samples(
@@ -125,20 +138,30 @@ def train_from_samples(
     labels: List[int],
     lang: str,
     model_dir: Optional[str] = None,
+    base_model: Optional[AcronymModel] = None,
 ) -> AcronymModel:
     """Train a model from in-memory samples and persist it to disk.
 
     Args:
-        samples:   List of ``(acronym, definition, pattern_type)`` tuples.
-        labels:    Parallel list of integer labels (``1`` / ``0``).
-        lang:      Language code (``"en"`` or ``"it"``).
-        model_dir: Directory where the model file is saved.
+        samples:    List of ``(acronym, definition, pattern_type[, context])``
+                    tuples.
+        labels:     Parallel list of integer labels (``1`` / ``0``).
+        lang:       Language code (``"en"`` or ``"it"``).
+        model_dir:  Directory where the model file is saved.
+        base_model: Optional pre-trained :class:`~acronym.model.AcronymModel`
+                    to warm-start from.  When provided, :meth:`~AcronymModel.update`
+                    is called on the base model so that previous weights are
+                    used as the starting point for optimisation.
 
     Returns:
         The trained :class:`~acronym.model.AcronymModel`.
     """
-    model = AcronymModel(lang=lang)
-    model.train(samples, labels)
+    if base_model is not None and base_model.is_trained():
+        model = base_model
+        model.update(samples, labels)
+    else:
+        model = AcronymModel(lang=lang)
+        model.train(samples, labels)
 
     model_path = get_model_path(lang, model_dir)
     model.save(model_path)

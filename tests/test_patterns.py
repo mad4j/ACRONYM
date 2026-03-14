@@ -94,3 +94,45 @@ class TestFindCandidatesItalian:
         acronyms = [c[0] for c in candidates]
         assert "INPS" in acronyms
         assert "ASL" in acronyms
+
+
+# ---------------------------------------------------------------------------
+# find_candidates_with_context
+# ---------------------------------------------------------------------------
+
+
+class TestFindCandidatesWithContext:
+    """Tests for the context-aware variant of candidate extraction."""
+
+    def test_returns_four_tuples(self):
+        from acronym.patterns import find_candidates_with_context
+        text = "The NATO (North Atlantic Treaty Organization) was founded in 1949."
+        candidates = find_candidates_with_context(text, lang="en")
+        assert len(candidates) >= 1
+        # Each entry must be a 4-tuple
+        for c in candidates:
+            assert len(c) == 4
+
+    def test_context_contains_match(self):
+        from acronym.patterns import find_candidates_with_context
+        text = "The CPU (Central Processing Unit) runs at 3 GHz."
+        candidates = find_candidates_with_context(text, lang="en")
+        acr_map = {c[0]: c[3] for c in candidates}
+        assert "CPU" in acr_map
+        # The context window should contain the acronym itself
+        assert "CPU" in acr_map["CPU"]
+
+    def test_consistent_with_find_candidates(self):
+        """find_candidates_with_context stripped of context equals find_candidates."""
+        from acronym.patterns import find_candidates_with_context
+        text = (
+            "The API (Application Programming Interface) and "
+            "Machine Learning (ML) are important."
+        )
+        with_ctx = find_candidates_with_context(text, lang="en")
+        without_ctx = find_candidates(text, lang="en")
+        assert [(c[0], c[1], c[2]) for c in with_ctx] == list(without_ctx)
+
+    def test_empty_text_returns_empty(self):
+        from acronym.patterns import find_candidates_with_context
+        assert find_candidates_with_context("", lang="en") == []

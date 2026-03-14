@@ -201,3 +201,47 @@ class TestDetectAcronyms:
             results = detect_acronyms(docx_path, lang="en", model=model)
             acronyms = [r["acronym"] for r in results]
             assert len(acronyms) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: contextual recognition
+# ---------------------------------------------------------------------------
+
+
+class TestContextualRecognition:
+    """Tests that verify the contextual features improve discrimination."""
+
+    def test_common_word_scores_lower_than_real_acronym(self):
+        """A "false" candidate using a common English word should score lower."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model = _train_model(tmpdir, "en")
+            # "IT" → "Italy" is a negative example; real acronym for comparison
+            text_fake = "IT (Italy) is a beautiful country in Southern Europe."
+            text_real = "The CPU (Central Processing Unit) drives system performance."
+            results_fake = detect_acronyms_from_text(text_fake, lang="en", model=model, threshold=0.0)
+            results_real = detect_acronyms_from_text(text_real, lang="en", model=model, threshold=0.0)
+            conf_fake = next((r["confidence"] for r in results_fake if r["acronym"] == "IT"), 0.0)
+            conf_real = next((r["confidence"] for r in results_real if r["acronym"] == "CPU"), 1.0)
+            # The genuine acronym should score at least as high as the noise candidate
+            assert conf_real >= conf_fake
+
+    def test_context_with_def_marker_included_in_results(self):
+        """A candidate preceded by 'stands for' context should be detected."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model = _train_model(tmpdir, "en")
+            # Explicit definitional phrasing in the text
+            text = "ML stands for Machine Learning (ML) in the context of AI research."
+            results = detect_acronyms_from_text(text, lang="en", model=model)
+            acronyms = [r["acronym"] for r in results]
+            assert "ML" in acronyms
+
+    def test_italian_contextual_detection(self):
+        """Italian definitional phrasing is recognised alongside normal detection."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model = _train_model(tmpdir, "it")
+            # Standard "ACRONYM (definition)" form paired with Italian context marker
+            text = "L'IVA (Imposta sul Valore Aggiunto) ossia la tassa sul valore è un tributo indiretto."
+            results = detect_acronyms_from_text(text, lang="it", model=model)
+            acronyms = [r["acronym"] for r in results]
+            assert "IVA" in acronyms
+

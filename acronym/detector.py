@@ -3,13 +3,18 @@
 A trained :class:`~acronym.model.AcronymModel` is required.  Use
 :func:`~acronym.trainer.train_from_file` or
 :func:`~acronym.trainer.train_from_samples` to create one first.
+
+Candidates are now extracted via :func:`~acronym.patterns.find_candidates_with_context`
+so that the surrounding sentence is passed to the feature extractor as context.
+This enables the two contextual features (``is_common_word`` and
+``context_has_def_marker``) to be computed properly at inference time.
 """
 
 import os
 from typing import Dict, List, Optional
 
 from .model import AcronymModel
-from .patterns import find_candidates
+from .patterns import find_candidates_with_context
 from .reader import read_docx
 from .trainer import DEFAULT_MODEL_DIR, get_model_path
 
@@ -55,7 +60,13 @@ def _score_and_filter(
     model: AcronymModel,
     threshold: float,
 ) -> List[Result]:
-    """Run *model* on *candidates* and return those above *threshold*."""
+    """Run *model* on *candidates* and return those above *threshold*.
+
+    *candidates* may be 3-tuples ``(acronym, definition, pattern_type)`` or
+    4-tuples ``(acronym, definition, pattern_type, context)``.  The context
+    string (if present) is forwarded to the feature extractor to enable
+    contextual scoring.
+    """
     if not candidates:
         return []
 
@@ -64,7 +75,8 @@ def _score_and_filter(
     results: List[Result] = []
     seen: set = set()
 
-    for (acronym, definition, _pattern_type), confidence in zip(candidates, probas):
+    for candidate, confidence in zip(candidates, probas):
+        acronym, definition = candidate[0], candidate[1]
         if confidence >= threshold:
             key = (acronym.upper(), definition.lower())
             if key not in seen:
@@ -119,7 +131,7 @@ def detect_acronyms(
         model = load_model(lang, model_dir)
 
     text = read_docx(docx_path)
-    candidates = find_candidates(text, lang)
+    candidates = find_candidates_with_context(text, lang)
     return _score_and_filter(candidates, model, threshold)
 
 
@@ -146,5 +158,5 @@ def detect_acronyms_from_text(
     if model is None:
         model = load_model(lang, model_dir)
 
-    candidates = find_candidates(text, lang)
+    candidates = find_candidates_with_context(text, lang)
     return _score_and_filter(candidates, model, threshold)
